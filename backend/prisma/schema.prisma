@@ -1,0 +1,301 @@
+// datasource configuration
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// generator for Prisma Client
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Define the User model (Admin, Merchant, Customer)
+model User {
+  id           Int       @id @default(autoincrement())
+  email        String    @unique @db.VarChar(255)
+  password     String
+  role         Role      @default(CUSTOMER)
+  firstName    String?
+  lastName     String?
+  stores       Store[]   @relation("UserStores")
+  orders       Order[]   @relation("UserOrders")
+  reviews      Review[]
+  cart         Cart?
+  addresses    Address[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastLoginAt  DateTime?
+  isActive     Boolean   @default(true)
+  metadata     Json?
+
+  @@index([email])
+  @@index([role])
+}
+
+enum Role {
+  ADMIN
+  MERCHANT
+  CUSTOMER
+}
+
+model Store {
+  id          Int          @id @default(autoincrement())
+  name        String
+  domain      String       @unique
+  description String?
+  ownerId     Int
+  owner       User         @relation("UserStores", fields: [ownerId], references: [id])
+  products    Product[]
+  orders      Order[]
+  categories  Category[]
+  discounts   Discount[]
+  config      StoreConfig?
+  isActive    Boolean      @default(true)
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+
+  @@index([ownerId])
+  @@index([domain])
+}
+
+model StoreConfig {
+  id            Int      @id @default(autoincrement())
+  storeId       Int      @unique
+  theme         String   // Example: 'default', 'minimal'
+  logoUrl       String?
+  bannerUrl     String?
+  primaryColor  String?
+  secondaryColor String?
+  store         Store    @relation(fields: [storeId], references: [id])
+  metadata      Json?
+}
+
+model Category {
+  id          Int        @id @default(autoincrement())
+  name        String
+  slug        String     @unique
+  description String?
+  imageUrl    String?
+  parentId    Int?
+  parent      Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryHierarchy")
+  products    Product[]
+  storeId     Int
+  store       Store      @relation(fields: [storeId], references: [id])
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  @@index([storeId])
+  @@index([slug])
+}
+
+model Product {
+  id          Int              @id @default(autoincrement())
+  name        String
+  slug        String           @unique
+  description String?
+  basePrice   Decimal            @db.Decimal(10, 2)
+  stock       Int              @default(0)
+  imageUrl    String?
+  images      String[]
+  storeId     Int
+  store       Store            @relation(fields: [storeId], references: [id])
+  categoryId  Int?
+  category    Category?        @relation(fields: [categoryId], references: [id])
+  variants    ProductVariant[]
+  reviews     Review[]
+  cartItems   CartItem[]
+  orderItems  OrderItem[]
+  isActive    Boolean          @default(true)
+  metadata    Json?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  deletedAt   DateTime?
+
+  @@index([storeId])
+  @@index([categoryId])
+  @@index([name])
+}
+
+model ProductVariant {
+  id        Int      @id @default(autoincrement())
+  sku       String   @unique
+  price     Decimal    @db.Decimal(10, 2)
+  stock     Int      @default(0)
+  productId Int
+  product   Product  @relation(fields: [productId], references: [id])
+  options   Json     // Store variant options like size, color, etc.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId])
+}
+
+model Cart {
+  id        Int        @id @default(autoincrement())
+  userId    Int        @unique
+  user      User       @relation(fields: [userId], references: [id])
+  items     CartItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([userId])
+}
+
+model CartItem {
+  id        Int      @id @default(autoincrement())
+  cartId    Int
+  cart      Cart     @relation(fields: [cartId], references: [id])
+  productId Int
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int
+  price     Decimal    @db.Decimal(10, 2)
+
+  @@index([cartId])
+  @@index([productId])
+}
+
+model Order {
+  id              Int          @id @default(autoincrement())
+  orderNumber     String       @unique
+  total           Decimal       @db.Decimal(10, 2)
+  status          OrderStatus  @default(PENDING)
+  userId          Int
+  storeId         Int
+  user            User         @relation("UserOrders", fields: [userId], references: [id])
+  store           Store        @relation(fields: [storeId], references: [id])
+  items           OrderItem[]
+  payment         Payment?
+  discount        Discount?    @relation(fields: [discountId], references: [id])
+  discountId      Int?
+  shippingAddress Address      @relation("ShippingAddress", fields: [shippingAddressId], references: [id])
+  billingAddress  Address      @relation("BillingAddress", fields: [billingAddressId], references: [id])
+  shippingAddressId Int
+  billingAddressId  Int
+  metadata        Json?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([storeId])
+  @@index([status])
+  @@index([orderNumber])
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+model OrderItem {
+  id        Int      @id @default(autoincrement())
+  quantity  Int
+  price     Decimal    @db.Decimal(10, 2)
+  productId Int
+  orderId   Int
+  product   Product  @relation(fields: [productId], references: [id])
+  order     Order    @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model Payment {
+  id            Int           @id @default(autoincrement())
+  orderId       Int           @unique
+  amount        Decimal         @db.Decimal(10, 2)
+  status        PaymentStatus @default(PENDING)
+  paymentMethod String
+  transactionId String?
+  order         Order         @relation(fields: [orderId], references: [id])
+  metadata      Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([orderId])
+  @@index([status])
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  rating    Int      @default(5)
+  comment   String?
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  productId Int
+  product   Product  @relation(fields: [productId], references: [id])
+  isVerified Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId])
+  @@index([userId])
+}
+
+model Discount {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique
+  type        DiscountType
+  value       Decimal        @db.Decimal(10, 2)
+  startDate   DateTime
+  endDate     DateTime
+  storeId     Int
+  store       Store        @relation(fields: [storeId], references: [id])
+  minAmount   Decimal?       @db.Decimal(10, 2)
+  maxUses     Int?
+  usedCount   Int          @default(0)
+  orders      Order[]
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([code])
+  @@index([storeId])
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+model Address {
+  id            Int         @id @default(autoincrement())
+  userId        Int
+  user          User        @relation(fields: [userId], references: [id])
+  type          AddressType @default(SHIPPING)
+  firstName     String
+  lastName      String
+  street        String
+  apartment     String?
+  city          String
+  state         String
+  country       String
+  zipCode       String
+  phone         String?
+  isDefault     Boolean     @default(false)
+  shippingOrders Order[]    @relation("ShippingAddress")
+  billingOrders  Order[]    @relation("BillingAddress")
+
+  @@index([userId])
+}
+
+enum AddressType {
+  SHIPPING
+  BILLING
+}
